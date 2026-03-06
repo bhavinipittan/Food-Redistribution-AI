@@ -1,53 +1,187 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Navbar } from './components/Navbar';
+import { Toaster } from './components/ui/sonner';
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import DonorDashboard from './pages/DonorDashboard';
+import ReceiverDashboard from './pages/ReceiverDashboard';
+import VolunteerDashboard from './pages/VolunteerDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import MetricsPage from './pages/MetricsPage';
+import { Loader2 } from 'lucide-react';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Protected Route Component
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FFFFF0] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#228B22]" />
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to={`/${user.role}`} replace />;
+  }
+  
+  return children;
+};
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+// Public Route (redirect if already logged in)
+const PublicRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FFFFF0] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#228B22]" />
+      </div>
+    );
+  }
+  
+  if (user) {
+    return <Navigate to={`/${user.role}`} replace />;
+  }
+  
+  return children;
+};
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+// Layout with Navbar
+const DashboardLayout = ({ children }) => {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <>
+      <Navbar />
+      {children}
+    </>
   );
 };
 
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/" element={
+        <PublicRoute>
+          <LandingPage />
+        </PublicRoute>
+      } />
+      <Route path="/login" element={
+        <PublicRoute>
+          <LoginPage />
+        </PublicRoute>
+      } />
+      <Route path="/register" element={
+        <PublicRoute>
+          <RegisterPage />
+        </PublicRoute>
+      } />
+      
+      {/* Donor Routes */}
+      <Route path="/donor" element={
+        <ProtectedRoute allowedRoles={['donor']}>
+          <DashboardLayout>
+            <DonorDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/donor/donations" element={
+        <ProtectedRoute allowedRoles={['donor']}>
+          <DashboardLayout>
+            <DonorDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Receiver Routes */}
+      <Route path="/receiver" element={
+        <ProtectedRoute allowedRoles={['receiver']}>
+          <DashboardLayout>
+            <ReceiverDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/receiver/available" element={
+        <ProtectedRoute allowedRoles={['receiver']}>
+          <DashboardLayout>
+            <ReceiverDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Volunteer Routes */}
+      <Route path="/volunteer" element={
+        <ProtectedRoute allowedRoles={['volunteer']}>
+          <DashboardLayout>
+            <VolunteerDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/volunteer/assignments" element={
+        <ProtectedRoute allowedRoles={['volunteer']}>
+          <DashboardLayout>
+            <VolunteerDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Admin Routes */}
+      <Route path="/admin" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <DashboardLayout>
+            <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/users" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <DashboardLayout>
+            <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/analytics" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <DashboardLayout>
+            <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Metrics - accessible to all logged in users */}
+      <Route path="/metrics" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <MetricsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Catch all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="App">
+          <AppRoutes />
+          <Toaster position="top-right" richColors />
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
