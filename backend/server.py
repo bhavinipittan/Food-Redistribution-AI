@@ -284,6 +284,108 @@ async def find_best_volunteer(donor_lat: float, donor_lon: float, receiver_lat: 
     
     return best_volunteer
 
+def find_best_donation_combination(donations: List[dict], target_capacity: int, max_combinations: int = 100) -> dict:
+    """
+    AI-based multi-donation matching algorithm.
+    Finds the best combination of donations that matches or closely matches shelter capacity.
+    
+    Priority:
+    1. Exact match to shelter capacity
+    2. Closest higher value (slightly over)
+    3. Closest lower value (slightly under)
+    """
+    if not donations or target_capacity <= 0:
+        return {"recommended": [], "others": donations, "total_servings": 0, "match_quality": "none"}
+    
+    # Limit donations to prevent expensive computations
+    donations_subset = donations[:15]  # Max 15 donations for combination search
+    n = len(donations_subset)
+    
+    best_combination = []
+    best_diff = float('inf')
+    best_total = 0
+    best_match_type = "none"
+    
+    # Try all subsets using bit manipulation (2^n combinations, limited)
+    max_subsets = min(2 ** n, max_combinations)
+    
+    for i in range(1, max_subsets):
+        combination = []
+        total_servings = 0
+        
+        for j in range(n):
+            if i & (1 << j):
+                combination.append(donations_subset[j])
+                total_servings += donations_subset[j].get("servings_estimate", 0)
+        
+        diff = total_servings - target_capacity
+        abs_diff = abs(diff)
+        
+        # Priority: Exact match > Closest higher > Closest lower
+        if diff == 0:  # Exact match
+            if abs_diff < best_diff or best_match_type != "exact":
+                best_combination = combination
+                best_diff = abs_diff
+                best_total = total_servings
+                best_match_type = "exact"
+        elif diff > 0 and best_match_type != "exact":  # Over capacity (preferred over under)
+            if best_match_type != "over" or abs_diff < best_diff:
+                best_combination = combination
+                best_diff = abs_diff
+                best_total = total_servings
+                best_match_type = "over"
+        elif diff < 0 and best_match_type not in ["exact", "over"]:  # Under capacity
+            if abs_diff < best_diff:
+                best_combination = combination
+                best_diff = abs_diff
+                best_total = total_servings
+                best_match_type = "under"
+    
+    # If no good combination found with subsets, try greedy approach for remaining
+    if not best_combination and len(donations) > 15:
+        # Sort by servings (descending) and greedily pick
+        sorted_donations = sorted(donations, key=lambda x: x.get("servings_estimate", 0), reverse=True)
+        greedy_combo = []
+        greedy_total = 0
+        
+        for d in sorted_donations:
+            servings = d.get("servings_estimate", 0)
+            if greedy_total + servings <= target_capacity * 1.2:  # Allow 20% over
+                greedy_combo.append(d)
+                greedy_total += servings
+                if greedy_total >= target_capacity:
+                    break
+        
+        if greedy_combo:
+            best_combination = greedy_combo
+            best_total = greedy_total
+            best_match_type = "exact" if greedy_total == target_capacity else ("over" if greedy_total > target_capacity else "under")
+    
+    # Separate recommended from others
+    recommended_ids = {d["id"] for d in best_combination}
+    others = [d for d in donations if d["id"] not in recommended_ids]
+    
+    # Determine match quality label
+    if best_match_type == "exact":
+        match_quality = "perfect"
+    elif best_match_type == "over" and best_diff <= target_capacity * 0.1:
+        match_quality = "excellent"
+    elif best_match_type == "over":
+        match_quality = "good"
+    elif best_match_type == "under" and best_diff <= target_capacity * 0.2:
+        match_quality = "partial"
+    else:
+        match_quality = "low"
+    
+    return {
+        "recommended": best_combination,
+        "others": others,
+        "total_servings": best_total,
+        "target_capacity": target_capacity,
+        "match_quality": match_quality,
+        "match_type": best_match_type
+    }
+
 # ================= AUTH ROUTES =================
 
 @api_router.post("/auth/register", response_model=dict)
