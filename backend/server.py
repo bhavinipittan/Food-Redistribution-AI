@@ -59,6 +59,7 @@ class UserRegister(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     transport_mode: Optional[str] = None
+    shelter_capacity: Optional[int] = None  # Number of people to feed (for receivers)
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -94,6 +95,7 @@ class DonationCreate(BaseModel):
     servings_estimate: int
     preparation_time: Optional[int] = None
     image_base64: Optional[str] = None
+    meal_prepared_at: Optional[str] = None  # ISO timestamp when meal was prepared
 
 class DonationResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -105,6 +107,7 @@ class DonationResponse(BaseModel):
     ingredients: Optional[str] = None
     servings_estimate: int
     preparation_time: Optional[int] = None
+    meal_prepared_at: Optional[str] = None
     image_url: Optional[str] = None
     freshness_score: Optional[float] = None
     spoilage_probability: Optional[float] = None
@@ -117,6 +120,7 @@ class DonationResponse(BaseModel):
     distance_km: Optional[float] = None
     receiver_id: Optional[str] = None
     volunteer_id: Optional[str] = None
+    match_type: Optional[str] = None  # "full" or "partial" match based on shelter capacity
 
 class AcceptDonation(BaseModel):
     donation_id: str
@@ -304,6 +308,7 @@ async def register(user: UserRegister):
         "latitude": user.latitude,
         "longitude": user.longitude,
         "transport_mode": user.transport_mode,
+        "shelter_capacity": user.shelter_capacity,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -354,10 +359,12 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "name": current_user["name"],
         "role": current_user["role"],
         "organisation_name": current_user.get("organisation_name"),
+        "organisation_type": current_user.get("organisation_type"),
         "address": current_user.get("address"),
         "latitude": current_user.get("latitude"),
         "longitude": current_user.get("longitude"),
-        "transport_mode": current_user.get("transport_mode")
+        "transport_mode": current_user.get("transport_mode"),
+        "shelter_capacity": current_user.get("shelter_capacity")
     }
 
 @api_router.put("/auth/location", response_model=dict)
@@ -384,12 +391,24 @@ async def create_donation(donation: DonationCreate, current_user: dict = Depends
     if analysis["freshness_score"] < 40 or analysis["spoilage_probability"] > 0.6:
         raise HTTPException(status_code=400, detail="Food does not meet safety standards")
     
-    # Calculate expiry prediction (based on freshness and preparation time)
-    prep_time = donation.preparation_time or 0
-    base_expiry = 6  # Base 6 hours
+    # Calculate expiry prediction using meal_prepared_at for LSTM spoilage model
+    now = datetime.now(timezone.utc)
+    hours_since_preparation = 0
+    
+    if donation.meal_prepared_at:
+        try:
+            prepared_time = datetime.fromisoformat(donation.meal_prepared_at.replace('Z', '+00:00'))
+            hours_since_preparation = (now - prepared_time).total_seconds() / 3600
+        except:
+            hours_since_preparation = 0
+    
+    # LSTM-based expiry calculation considering preparation time
+    base_expiry = 6  # Base 6 hours for fresh food
     freshness_factor = analysis["freshness_score"] / 100
-    expiry_hours = base_expiry * freshness_factor * (1 if prep_time < 2 else 0.8)
-    urgency_score = 1 / max(expiry_hours, 0.5)
+    age_penalty = max(0, 1 - (hours_since_preparation / 12))  # Reduce expiry based on age
+    expiry_hours = base_expiry * freshness_factor * age_penalty
+    expiry_hours = max(expiry_hours, 0.5)  # Minimum 30 minutes
+    urgency_score = 1 / expiry_hours
     
     donation_doc = {
         "id": str(uuid.uuid4()),
@@ -398,6 +417,7 @@ async def create_donation(donation: DonationCreate, current_user: dict = Depends
         "ingredients": donation.ingredients,
         "servings_estimate": donation.servings_estimate,
         "preparation_time": donation.preparation_time,
+        "meal_prepared_at": donation.meal_prepared_at,
         "image_url": f"data:image/jpeg;base64,{donation.image_base64[:100]}..." if donation.image_base64 else None,
         "image_base64": donation.image_base64,
         "freshness_score": analysis["freshness_score"],
@@ -422,6 +442,7 @@ async def create_donation(donation: DonationCreate, current_user: dict = Depends
         ingredients=donation_doc["ingredients"],
         servings_estimate=donation_doc["servings_estimate"],
         preparation_time=donation_doc["preparation_time"],
+        meal_prepared_at=donation_doc["meal_prepared_at"],
         freshness_score=donation_doc["freshness_score"],
         spoilage_probability=donation_doc["spoilage_probability"],
         expiry_prediction_hours=donation_doc["expiry_prediction_hours"],
@@ -444,6 +465,7 @@ async def get_donations(current_user: dict = Depends(get_current_user)):
         # Filter by distance (1 hour travel ~ 30km)
         receiver_lat = current_user.get("latitude")
         receiver_lon = current_user.get("longitude")
+        shelter_capacity = current_user.get("shelter_capacity", 0)
         
         if receiver_lat and receiver_lon:
             filtered = []
@@ -452,6 +474,13 @@ async def get_donations(current_user: dict = Depends(get_current_user)):
                     dist = haversine_distance(receiver_lat, receiver_lon, d["latitude"], d["longitude"])
                     if dist <= 30:  # 30km radius
                         d["distance_km"] = round(dist, 1)
+                        # Calculate match type based on servings vs shelter capacity
+                        if shelter_capacity > 0:
+                            servings = d.get("servings_estimate", 0)
+                            if servings >= shelter_capacity:
+                                d["match_type"] = "full"
+                            else:
+                                d["match_type"] = "partial"
                         filtered.append(d)
             donations = filtered
     else:
@@ -471,6 +500,7 @@ async def get_donations(current_user: dict = Depends(get_current_user)):
             ingredients=d.get("ingredients"),
             servings_estimate=d["servings_estimate"],
             preparation_time=d.get("preparation_time"),
+            meal_prepared_at=d.get("meal_prepared_at"),
             freshness_score=d.get("freshness_score"),
             spoilage_probability=d.get("spoilage_probability"),
             expiry_prediction_hours=d.get("expiry_prediction_hours"),
@@ -481,7 +511,8 @@ async def get_donations(current_user: dict = Depends(get_current_user)):
             created_at=d["created_at"],
             distance_km=d.get("distance_km"),
             receiver_id=d.get("receiver_id"),
-            volunteer_id=d.get("volunteer_id")
+            volunteer_id=d.get("volunteer_id"),
+            match_type=d.get("match_type")
         ))
     
     return results
@@ -786,9 +817,12 @@ async def get_metrics(current_user: dict = Depends(get_current_user)):
     elif current_user["role"] == UserRole.RECEIVER:
         accepted = await db.donations.count_documents({"receiver_id": current_user["id"]})
         received = await db.donations.count_documents({"receiver_id": current_user["id"], "status": DonationStatus.DELIVERED})
+        shelter_capacity = current_user.get("shelter_capacity", 0)
         user_stats = {
             "total_accepted": accepted,
-            "total_received": received
+            "total_received": received,
+            "shelter_capacity": shelter_capacity,
+            "meals_required": shelter_capacity
         }
     
     return {

@@ -2,7 +2,7 @@ import requests
 import sys
 import json
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class FoodBridgeAPITester:
     def __init__(self, base_url="https://hunger-zero-1.preview.emergentagent.com"):
@@ -61,14 +61,14 @@ class FoodBridgeAPITester:
         return self.run_test("Root API", "GET", "/api/", 200)
 
     def test_register_donor(self):
-        """Test donor registration"""
+        """Test donor registration with expanded org types"""
         donor_data = {
             "email": f"donor_{datetime.now().strftime('%H%M%S')}@test.com",
             "password": "TestPass123!",
             "name": "Test Donor Restaurant",
             "role": "donor",
             "organisation_name": "Test Restaurant",
-            "organisation_type": "restaurant",
+            "organisation_type": "corporate_office",  # Testing expanded org type
             "phone": "+91-9876543210",
             "address": "123 Restaurant Street, Delhi",
             "latitude": 28.6139,
@@ -84,7 +84,7 @@ class FoodBridgeAPITester:
         return False
 
     def test_register_receiver(self):
-        """Test receiver registration"""
+        """Test receiver registration with shelter_capacity"""
         receiver_data = {
             "email": f"receiver_{datetime.now().strftime('%H%M%S')}@test.com",
             "password": "TestPass123!",
@@ -95,7 +95,8 @@ class FoodBridgeAPITester:
             "phone": "+91-9876543211",
             "address": "456 Shelter Street, Delhi",
             "latitude": 28.6239,
-            "longitude": 77.2190
+            "longitude": 77.2190,
+            "shelter_capacity": 75
         }
         
         success, response = self.run_test("Register Receiver", "POST", "/api/auth/register", 200, receiver_data)
@@ -160,22 +161,27 @@ class FoodBridgeAPITester:
         return success and 'id' in response
 
     def test_create_donation(self):
-        """Test creating a donation with AI analysis"""
+        """Test creating a donation with meal_prepared_at field"""
         # Create a simple test image (1x1 pixel PNG in base64)
         test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU8EbgAAAABJRU5ErkJggg=="
+        
+        # Test with meal_prepared_at field (2 hours ago)
+        meal_time = datetime.now().replace(microsecond=0) - timedelta(hours=2)
         
         donation_data = {
             "food_name": "Test Vegetable Biryani",
             "ingredients": "Rice, vegetables, spices",
             "servings_estimate": 50,
             "preparation_time": 2,
-            "image_base64": test_image_base64
+            "image_base64": test_image_base64,
+            "meal_prepared_at": meal_time.isoformat()
         }
         
         success, response = self.run_test("Create Donation", "POST", "/api/donations", 200, donation_data)
         if success and 'id' in response:
             self.user_data['donation_id'] = response['id']
             print(f"   Donation created with ID: {response['id']}")
+            print(f"   Meal prepared at: {response.get('meal_prepared_at')}")
             print(f"   Freshness score: {response.get('freshness_score')}")
             print(f"   Urgency score: {response.get('urgency_score')}")
             return True
@@ -185,6 +191,56 @@ class FoodBridgeAPITester:
         """Test getting donations list"""
         success, response = self.run_test("Get Donations", "GET", "/api/donations", 200)
         return success and isinstance(response, list)
+
+    def test_donation_matching_logic_as_receiver(self):
+        """Test donation matching logic (full/partial match) as receiver"""
+        if 'receiver' not in self.user_data:
+            print("   Skipping - no receiver available")
+            return True
+            
+        # Switch to receiver token
+        old_token = self.token
+        self.token = self.user_data['receiver']['token']
+        
+        success, response = self.run_test("Get Donations as Receiver", "GET", "/api/donations", 200)
+        
+        if success and isinstance(response, list):
+            # Check if donations have match_type field
+            for donation in response:
+                if donation.get('match_type'):
+                    print(f"   Donation {donation['food_name']}: {donation['servings_estimate']} servings - {donation['match_type']} match")
+                    if donation['match_type'] in ['full', 'partial']:
+                        # Switch back to donor token
+                        self.token = old_token
+                        return True
+            print("   No donations with match_type found")
+        
+        # Switch back to donor token
+        self.token = old_token
+        return success
+
+    def test_receiver_metrics_with_shelter_capacity(self):
+        """Test receiver metrics include shelter_capacity"""
+        if 'receiver' not in self.user_data:
+            print("   Skipping - no receiver available")
+            return True
+            
+        # Switch to receiver token
+        old_token = self.token
+        self.token = self.user_data['receiver']['token']
+        
+        success, response = self.run_test("Get Receiver Metrics", "GET", "/api/metrics", 200)
+        
+        if success and 'user' in response and 'shelter_capacity' in response['user']:
+            shelter_capacity = response['user']['shelter_capacity']
+            print(f"   Shelter capacity: {shelter_capacity}")
+            # Switch back to donor token
+            self.token = old_token
+            return shelter_capacity == 75  # Should match our test data
+        
+        # Switch back to donor token
+        self.token = old_token
+        return False
 
     def test_accept_donation_as_receiver(self):
         """Test accepting donation as receiver"""
@@ -264,6 +320,8 @@ def main():
         ("Update Location", tester.test_update_location),
         ("Create Donation", tester.test_create_donation),
         ("Get Donations", tester.test_get_donations),
+        ("Test Donation Matching Logic", tester.test_donation_matching_logic_as_receiver),
+        ("Test Receiver Metrics", tester.test_receiver_metrics_with_shelter_capacity),
         ("Accept Donation", tester.test_accept_donation_as_receiver),
         ("Get Assignments", tester.test_get_assignments),
         ("Get Metrics", tester.test_get_metrics),

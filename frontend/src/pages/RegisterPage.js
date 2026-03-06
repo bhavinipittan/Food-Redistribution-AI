@@ -19,7 +19,8 @@ const RegisterPage = () => {
     address: '',
     latitude: null,
     longitude: null,
-    transport_mode: ''
+    transport_mode: '',
+    shelter_capacity: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -39,6 +40,44 @@ const RegisterPage = () => {
     { value: 'car', label: 'Car' },
     { value: 'scooter', label: 'Scooter' },
     { value: 'walking', label: 'Walking' }
+  ];
+
+  // Expanded donor organization types
+  const donorOrgTypes = [
+    { value: 'restaurant', label: 'Restaurant' },
+    { value: 'hotel', label: 'Hotel' },
+    { value: 'resort', label: 'Resort' },
+    { value: 'corporate_office', label: 'Corporate Office' },
+    { value: 'corporate_event', label: 'Corporate Event' },
+    { value: 'event_management', label: 'Event Management Company' },
+    { value: 'wedding_hall', label: 'Wedding Hall' },
+    { value: 'wedding_catering', label: 'Wedding Catering' },
+    { value: 'college_canteen', label: 'College Canteen' },
+    { value: 'school_canteen', label: 'School Canteen' },
+    { value: 'hostel_mess', label: 'Hostel Mess' },
+    { value: 'food_court', label: 'Food Court' },
+    { value: 'supermarket', label: 'Supermarket' },
+    { value: 'grocery_store', label: 'Grocery Store' },
+    { value: 'bakery', label: 'Bakery' },
+    { value: 'religious_institution', label: 'Religious Institution' },
+    { value: 'community_kitchen', label: 'Community Kitchen' },
+    { value: 'ngo_kitchen', label: 'NGO Kitchen' },
+    { value: 'food_processing', label: 'Food Processing Unit' },
+    { value: 'railway_catering', label: 'Railway Catering' },
+    { value: 'airline_catering', label: 'Airline Catering' },
+    { value: 'farmers_market', label: 'Farmers Market' },
+    { value: 'household', label: 'Household' }
+  ];
+
+  // Receiver organization types
+  const receiverOrgTypes = [
+    { value: 'ngo', label: 'NGO' },
+    { value: 'shelter', label: 'Shelter' },
+    { value: 'orphanage', label: 'Orphanage' },
+    { value: 'old_age_home', label: 'Old Age Home' },
+    { value: 'community_center', label: 'Community Center' },
+    { value: 'religious_institution', label: 'Religious Institution' },
+    { value: 'other', label: 'Other' }
   ];
 
   const getLocation = () => {
@@ -70,7 +109,11 @@ const RegisterPage = () => {
     setLoading(true);
     
     try {
-      const user = await register(formData);
+      const submitData = {
+        ...formData,
+        shelter_capacity: formData.shelter_capacity ? parseInt(formData.shelter_capacity) : null
+      };
+      const user = await register(submitData);
       navigate(`/${user.role}`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
@@ -207,26 +250,37 @@ const RegisterPage = () => {
                     <SelectTrigger className="mt-2 input-field w-full" data-testid="register-org-type">
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[300px]">
                       {formData.role === 'donor' ? (
-                        <>
-                          <SelectItem value="restaurant">Restaurant</SelectItem>
-                          <SelectItem value="hotel">Hotel</SelectItem>
-                          <SelectItem value="event">Event</SelectItem>
-                          <SelectItem value="hostel">Hostel</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </>
+                        donorOrgTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                        ))
                       ) : (
-                        <>
-                          <SelectItem value="ngo">NGO</SelectItem>
-                          <SelectItem value="shelter">Shelter</SelectItem>
-                          <SelectItem value="orphanage">Orphanage</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </>
+                        receiverOrgTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                        ))
                       )}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            )}
+
+            {formData.role === 'receiver' && (
+              <div>
+                <Label htmlFor="shelter_capacity" className="text-stone-700 font-medium">Shelter Capacity (Number of People to Feed) *</Label>
+                <Input
+                  id="shelter_capacity"
+                  type="number"
+                  min="1"
+                  value={formData.shelter_capacity}
+                  onChange={(e) => setFormData(prev => ({ ...prev, shelter_capacity: e.target.value }))}
+                  placeholder="e.g., 100"
+                  className="mt-2 input-field w-full"
+                  required
+                  data-testid="register-shelter-capacity"
+                />
+                <p className="text-xs text-stone-500 mt-1">How many people does your shelter need to feed daily?</p>
               </div>
             )}
 

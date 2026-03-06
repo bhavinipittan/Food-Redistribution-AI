@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Package, MapPin, Clock, CheckCircle, Loader2, Navigation } from 'lucide-react';
+import { Package, MapPin, Clock, CheckCircle, Loader2, Navigation, Users, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -122,8 +122,24 @@ const ReceiverDashboard = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <Card className="card-base">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <Users className="w-6 h-6 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="stat-value">{metrics?.user?.shelter_capacity || 0}</p>
+                    <p className="stat-label">Shelter Capacity</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
             <Card className="card-base">
               <CardContent className="p-6">
                 <div className="flex items-center gap-4">
@@ -155,7 +171,7 @@ const ReceiverDashboard = () => {
             </Card>
           </motion.div>
           
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
             <Card className="card-base">
               <CardContent className="p-6">
                 <div className="flex items-center gap-4">
@@ -200,6 +216,23 @@ const ReceiverDashboard = () => {
                         {donation.freshness_score}%
                       </span>
                     </div>
+                    
+                    {/* Match Type Badge */}
+                    {donation.match_type && (
+                      <div className="mb-3">
+                        {donation.match_type === 'full' ? (
+                          <Badge className="bg-green-100 text-green-800 flex items-center gap-1 w-fit">
+                            <CheckCircle className="w-3 h-3" />
+                            Full Match - Covers your shelter
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-800 flex items-center gap-1 w-fit">
+                            <AlertCircle className="w-3 h-3" />
+                            Partial - Need more donations
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                     
                     <div className="space-y-2 text-sm text-stone-600 mb-4">
                       <div className="flex items-center gap-2">

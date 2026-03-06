@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Package, Users, Truck, Plus, Camera, X, Loader2, Clock, CheckCircle } from 'lucide-react';
+import { Package, Users, Truck, Plus, Camera, X, Loader2, Clock, CheckCircle, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -25,7 +25,8 @@ const DonorDashboard = () => {
     ingredients: '',
     servings_estimate: '',
     preparation_time: '',
-    image_base64: ''
+    image_base64: '',
+    meal_prepared_at: ''
   });
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -64,18 +65,25 @@ const DonorDashboard = () => {
 
   const handleCreateDonation = async (e) => {
     e.preventDefault();
+    
+    if (!newDonation.meal_prepared_at) {
+      toast.error('Please enter when the meal was prepared');
+      return;
+    }
+    
     setCreating(true);
     
     try {
       await axios.post(`${API_URL}/api/donations`, {
         ...newDonation,
         servings_estimate: parseInt(newDonation.servings_estimate),
-        preparation_time: newDonation.preparation_time ? parseInt(newDonation.preparation_time) : null
+        preparation_time: newDonation.preparation_time ? parseInt(newDonation.preparation_time) : null,
+        meal_prepared_at: new Date(newDonation.meal_prepared_at).toISOString()
       });
       
       toast.success('Donation created successfully!');
       setCreateOpen(false);
-      setNewDonation({ food_name: '', ingredients: '', servings_estimate: '', preparation_time: '', image_base64: '' });
+      setNewDonation({ food_name: '', ingredients: '', servings_estimate: '', preparation_time: '', image_base64: '', meal_prepared_at: '' });
       setImagePreview(null);
       fetchData();
     } catch (error) {
@@ -139,6 +147,24 @@ const DonorDashboard = () => {
                     required
                     data-testid="donation-food-name"
                   />
+                </div>
+                
+                <div>
+                  <Label htmlFor="meal_prepared_at" className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Meal Preparation Date & Time *
+                  </Label>
+                  <Input
+                    id="meal_prepared_at"
+                    type="datetime-local"
+                    value={newDonation.meal_prepared_at}
+                    onChange={(e) => setNewDonation(prev => ({ ...prev, meal_prepared_at: e.target.value }))}
+                    className="mt-1"
+                    required
+                    max={new Date().toISOString().slice(0, 16)}
+                    data-testid="donation-meal-prepared-at"
+                  />
+                  <p className="text-xs text-stone-500 mt-1">When was this meal prepared? This helps us predict food freshness accurately.</p>
                 </div>
                 
                 <div>
